@@ -9,8 +9,13 @@
 #include <unistd.h>
 #include <errno.h>
 #include <arpa/inet.h>
+#include <time.h>
 
-#define BUFFUNIT 1024
+#define BUF_SIZE 1024
+
+void error_handling(char * message);
+int send_file(int socket, const char * filename);
+int recv_file(int socket, const char * filename);
 
 int main (int argc, char *argv[]) {
     FILE *fp = NULL;
@@ -18,9 +23,9 @@ int main (int argc, char *argv[]) {
     int serv_sock, clnt_sock;
     // int worker_port = argv[4]; - ip:port 분리해야함
     int serv_port = atoi(argv[2]);
-    char userID[BUFFUNIT];
-    char recvbuff[BUFFUNIT];
-
+    char userID[BUF_SIZE];
+    char buf[BUF_SIZE];
+    
     if (argc != 6) {
         printf("Usage: %s -p <port number> -w <IP>:<port> <testcase_path>");
     }
@@ -43,7 +48,8 @@ int main (int argc, char *argv[]) {
     if(listen (serv_sock, 100) == -1)
         error_handling("listen() error!");
 
-    for(i=0; i<100; i++) {
+    while(1) {
+        printf("Connect new client\n");
         clnt_sock = -1;
         memset (&clnt_addr, 0, sizeof(clnt_addr));
         clnt_sock = accept (serv_sock, (struct sockaddr *)&clnt_addr, &clnt_addr_size);
@@ -56,24 +62,31 @@ int main (int argc, char *argv[]) {
             // error_handling("accept() error!"); 
             //--> 수정해야함..? 연결중 다른 유저가 request 시에 처리법
         }
-        else{
-            //Submitter의 정보 받기
-            read(clnt_sock, recvbuff, sizeof(recvbuff));
-            strncpy(userID, recvbuff, BUFFUNIT);
-            printf("UserID: %s\n", userID);
 
-            //FILE 받기
-            tot_bytes = 0;
-            fp = fopen("submitter_file.c","wb");
-            if(fp == NULL)
-                error_handling("fopen() error! You should check your file name");
-            
-            while((str_len = read(clnt_sock, recvbuff, BUFFUNIT)) != 0){
-                printf("recbuff: \n\n%s\n", recvbuff);
-                fprintf(fp, recvbuff);
+        //Submitter의 정보 받기
+        recv(clnt_sock, buf, 9, 0);
+        strncpy(userID, buf, 9);
+        printf("UserID: %s\n", userID);
+
+        //FILE 받기
+        recv_file(clnt_sock, "submitter_file.c");
+    
+        //clock_t start = clock();
+        int times = 1;
+        while(1){
+            printf("Waiting?\n");
+            recv(clnt_sock, buf, 5, 0);
+            if(times++ >= 6) {
+                printf("send 0x33 to client\n");
+                buf[0] = 0x33; 
+                send(clnt_sock, buf, 5, 0);
+                break;
             }
-            fclose(fp);
+            buf[0] = 0x00;
+            send(clnt_sock, buf, 5, 0);
+            sleep(1);
         }
+
         close(clnt_sock);
     }
     close(serv_sock);
@@ -83,4 +96,68 @@ void error_handling(char * message){
     fputs(message, stderr);
     fputc('\n',stderr);
     exit(1);
+}
+int send_file(int socket, const char * filename) {
+    /*
+        send할 파일의 size를 먼저 보냄.
+    */
+    FILE * fp;
+    int file_size = 0;
+    int buffer_num = 0;
+    int total_send_bytes = 0;
+    int send_bytes;
+    int total_buffer_num;
+    
+    char buf[BUF_SIZE];
+    if((fp = fopen(filename, "rb")) == NULL) 
+        error_handling("File not Exist");
+
+    fseek(fp, 0, SEEK_END);
+    file_size = ftell(fp);
+    total_buffer_num = (file_size - 1) / sizeof(buf) + 1;
+    fseek(fp, 0, SEEK_SET);
+    snprintf(buf, sizeof(buf), "%d", file_size);    
+
+    send_bytes = send(socket, buf, sizeof(buf), 0);  //input file 사이즈 보내기
+
+    buffer_num = 0;
+    total_send_bytes = 0;
+
+    while((send_bytes = fread(buf, sizeof(char), sizeof(buf), fp)) > 0) {
+        send(socket, buf, send_bytes, 0);
+        buffer_num++;
+        total_send_bytes += send_bytes;
+        printf("%s progress: %d/%dByte(s) [%d%%] (sending)\n", filename, total_send_bytes, file_size, buffer_num * 100 / total_buffer_num);
+    }
+    fclose(fp);
+    return 0;
+}
+
+
+int recv_file(int socket, const char * filename) {
+    /*
+        receive할 파일의 size를 먼저 보냄.
+    */
+    FILE * fp;
+    fp = fopen(filename, "wb");
+
+    char buf[1024];
+    int read_bytes;
+    int file_size;
+    int total_buf_num;
+    int buf_num = 0;
+    int total_read_bytes = 0;
+    read_bytes = recv(socket, buf, sizeof(buf), 0);
+    file_size = atoi(buf);
+    total_buf_num = (file_size - 1) / sizeof(buf) + 1;
+
+    while(buf_num != total_buf_num) {
+        read_bytes = recv(socket, buf, sizeof(buf), 0);
+        fwrite(buf, sizeof(char), read_bytes, fp);
+        buf_num++;
+        total_read_bytes += read_bytes;
+        printf("%s progress: %d/%dByte(s) [%d%%] (receiving)\n", filename , total_read_bytes, file_size, buf_num * 100 / total_buf_num);
+    }
+    fclose(fp);
+    return 0;
 }
