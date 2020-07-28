@@ -6,57 +6,41 @@
 #include <sys/socket.h>
 #define BUF_SIZE 1024
 
+//Client!!!
 void error_handling(char * message);
 int send_file(int socket, const char * filename);
-int recv_file(int socket, char * filename);
+int recv_file(int socket, const char * filename);
 
 int main(int argc, char * argv[]) {
-    int serv_sock;
     int clnt_sock;
-
-    //sockaddr_in은 소켓 주소의 틀을 형성해주는 구조체로 AF_INET일 경우 사용
     struct sockaddr_in serv_addr;
-    struct sockaddr_in clnt_addr;   //accept함수에서 사용됨.
-    socklen_t clnt_addr_size;
-
-    if(argc != 4) {
-        printf("Usage : %s <port> <filename> <testcase directory>\n", argv[0]);
-        exit(1);
-    }
-
-    
-    //TCPd연결지향형이고 ipv4 도메인을 위한 소켓을 생성
-    serv_sock = socket(PF_INET, SOCK_STREAM, 0);
-    if(serv_sock == -1)
-        error_handling("socket error");
-    
-    //주소를 초기화한 후 IP주소와 포트 지정
-    memset(&serv_addr, 0, sizeof(serv_addr));
-    serv_addr.sin_family=AF_INET;                   //타입: ipv4
-    serv_addr.sin_addr.s_addr=htonl(INADDR_ANY);    //ip주소
-    serv_addr.sin_port=htons(atoi(argv[1]));         //port
-
-    //소켓과 서버 주소를 바인딩
-    if(bind(serv_sock, (struct sockaddr*) &serv_addr, sizeof(serv_addr))==-1)
-        error_handling("bind error");
-
-    //연결 대기열 50개 생성
-    if(listen(serv_sock, 50)==-1)
-        error_handling("listen error");
-    printf("listening..\n");    
-
-    //클라이언트로부터 요청이 오면 연결 수락
-    clnt_sock = accept(serv_sock, (struct sockaddr*)&clnt_addr, &clnt_addr_size);   //블록킹!  
-    if(clnt_sock==-1)
-        error_handling("accept error");
-    printf("Connection Request from Client [IP:%s, Port:%d] has been Accepted\n",
-            inet_ntoa(clnt_addr.sin_addr), ntohs(clnt_addr.sin_port));
-    
-    
     char buf[BUF_SIZE];
 
+    if(argc != 5) {
+        printf("Usage : %s <ip address> <port> <filename> <testcase directory>\n", argv[0]);
+        exit(1);
+    }
+    
+    //TCP연결지향형이고 ipv4 도메인을 위한 소켓을 생성
+    clnt_sock = socket(PF_INET, SOCK_STREAM, 0);
+    if(clnt_sock == -1) 
+        error_handling("socket error");
+    
+    //인자로 받은 서버주소 정보를 저장
+    memset(&serv_addr, 0, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;  //서버주소체계는 ipv4.
+    serv_addr.sin_addr.s_addr = inet_addr(argv[1]); //서버주소(ip)저장
+    serv_addr.sin_port = htons(atoi(argv[2]));  //서버 포트번호 저장
+
+    //클라이언트 소켓부분에 서버를 연결
+    if(connect(clnt_sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) == -1)
+        error_handling("connect error");
+
+
+    FILE * fp;
+
     //.c 파일 전송
-    send_file(clnt_sock, argv[2]);
+    send_file(clnt_sock, argv[3]);
 
     //컴파일 에러 여부 체크
     recv(clnt_sock, buf, 1, 0);
@@ -67,18 +51,16 @@ int main(int argc, char * argv[]) {
         printf("compile success!\n");
     //testcase 하나 send, 하나 recv         (5개로 고정)
     for(int i = 1; i <= 5; i++) {
-        FILE * fp;
-
-        snprintf(buf, sizeof(buf), "%s/%d.in", argv[3], i);
+        snprintf(buf, sizeof(buf), "%s/%d.in", argv[4], i);
         
         send_file(clnt_sock, buf);
 
         //i.out 결과 받고
-        snprintf(buf, sizeof(buf), "%s/%d.recv.out", argv[3], i);
+        snprintf(buf, sizeof(buf), "%s/%d.recv.out", argv[4], i);
         recv_file(clnt_sock, buf);
 
         //정답 맞는지 diff 후, 이 TC에 대한 결과 출력
-        snprintf(buf, sizeof(buf), "diff %s/%d.recv.out %s/%d.out", argv[3], i, argv[3], i);
+        snprintf(buf, sizeof(buf), "diff %s/%d.recv.out %s/%d.out", argv[4], i, argv[4], i);
         if((fp = popen(buf, "r")) == NULL)
             error_handling("popen() error");
         memset(buf, 0, sizeof(buf));
@@ -87,14 +69,18 @@ int main(int argc, char * argv[]) {
             printf("@@@ TC[%d] CORRECT!\n", i);
         }
         else {
-            printf("@@@ TC[%d] WRONG. %s\n", i, buf);
+            printf("@@@ TC[%d] WRONG.\n", i);
         }
         pclose(fp);
     }
 
+    //생성된 파일 삭제 (*.recv.out)
+    snprintf(buf, sizeof(buf), "rm -rf %s/*.recv.out", argv[4]);
+    fp = popen(buf, "r");
+    pclose(fp);
+
     //소켓들 닫기
     close(clnt_sock);
-    close(serv_sock);
     puts("FINISHED");
     return 0;
 }
@@ -143,7 +129,7 @@ int send_file(int socket, const char * filename) {
 }
 
 
-int recv_file(int socket, char * filename) {
+int recv_file(int socket, const char * filename) {
     /*
         receive할 파일의 size를 먼저 보냄.
     */
