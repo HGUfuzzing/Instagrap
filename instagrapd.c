@@ -14,7 +14,6 @@
 
 int main (int argc, char *argv[]) {
     FILE *fp = NULL;
-    int i, bytes, tot_bytes, str_len;
     int serv_sock, clnt_sock;
     int serv_port = atoi(argv[2]);
     char userID[BUF_SIZE];
