@@ -31,7 +31,7 @@ int main (int argc, char *argv[]) {
     }
 
     struct sockaddr_in serv_addr, clnt_addr;
-    socklen_t clnt_addr_size;
+    socklen_t clnt_addr_size = sizeof(clnt_addr);
 
     serv_sock = socket (PF_INET, SOCK_STREAM, 0);
     if(serv_sock == -1)
@@ -43,8 +43,10 @@ int main (int argc, char *argv[]) {
     serv_addr.sin_port = htons (serv_port);
 
     //완료
-    if(bind(serv_sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) == -1)
-        error_handling("bind() error!");
+    if(bind(serv_sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0){
+        // error_handling("bind() error!");
+        perror("[-]Error in bind");
+    }
     if(listen (serv_sock, 100) == -1)
         error_handling("listen() error!");
 
@@ -59,8 +61,6 @@ int main (int argc, char *argv[]) {
 
         if(clnt_sock == -1){
             perror("accept() error!");
-            // error_handling("accept() error!"); 
-            //--> 수정해야함..? 연결중 다른 유저가 request 시에 처리법
         }
 
         //Submitter의 정보 받기
@@ -70,8 +70,7 @@ int main (int argc, char *argv[]) {
 
         //FILE 받기
         recv_file(clnt_sock, "submitter_file.c");
-    
-        //clock_t start = clock();
+        send(clnt_sock, buf, 1, 0);
         int times = 1;
         while(1){
             printf("Waiting?\n");

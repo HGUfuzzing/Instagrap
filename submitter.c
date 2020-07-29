@@ -60,6 +60,7 @@ int main (int argc, char *argv[]) {
     //OR send request message / 2sec - 그 후 서버가 체크
     buf[0] = 0xff;
     int times = 1;
+    recv(clnt_sock, buf, 1, 0);
     while(1){
         send(clnt_sock,buf,5,0);
         printf("send %d\n", times);
@@ -69,7 +70,8 @@ int main (int argc, char *argv[]) {
             printf("Success\n");
             break;
         }
-
+        //같은 ip, port라 전송이 된걸수도!! 
+        //임의로 submitter 파일을 2개 만들고 ip와 port 번호 변경해보기....
         printf("Waiting for results..\n");
         sleep(1);
     }
