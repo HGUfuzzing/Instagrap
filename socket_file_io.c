@@ -1,12 +1,43 @@
 #include "socket_file_io.h"
 
-void error_handling(char *message) {
+pid_t 
+my_popen(const char *command, int *read_fd)
+{
+    int pipefd[2];
+    pid_t pid;
+
+    if (pipe(pipefd) < 0)
+        return -1;
+
+    pid = fork();
+
+    if (pid < 0)
+        error_handling("failed to fork()");
+    else if (pid == 0)
+    {   
+        dup2(pipefd[1], 1);
+        close(pipefd[0]);
+        close(pipefd[1]);
+        execl("/bin/sh", "sh", "-c", command, NULL);
+        exit(1);
+    }
+    *read_fd = pipefd[0];
+    return pid;
+}
+
+
+void 
+error_handling(char *message) {
     fputs(message, stderr);
     fputc('\n', stderr);
     exit(1);
 }
 
-int send_file(int socket, const char * filename) {
+
+
+
+int 
+send_file(int socket, const char * filename) {
     /*
         send할 파일의 size를 먼저 보냄.
     */
@@ -43,7 +74,8 @@ int send_file(int socket, const char * filename) {
 }
 
 
-int recv_file(int socket, const char * filename) {
+int 
+recv_file(int socket, const char * filename) {
     /*
         receive할 파일의 size를 먼저 보냄.
     */

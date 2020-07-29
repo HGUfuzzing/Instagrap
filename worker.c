@@ -19,7 +19,7 @@ int main(int argc, char * argv[]) {
     socklen_t clnt_addr_size = sizeof(clnt_addr);
 
     if(argc != 3) {
-        printf("Usage : %s <port> <worker space>\n", argv[0]);
+        printf("Usage : %s <Port> <Working Dir>\n", argv[0]);
         exit(1);
     }
 
@@ -41,18 +41,17 @@ int main(int argc, char * argv[]) {
     //연결 대기열 50개 생성
     if(listen(serv_sock, 50)==-1)
         error_handling("listen error");
-    printf("listening..\n");    
+    printf("listening to port %s\n", argv[1]);    
 
-
+    
     while(1) {
         //클라이언트로부터 요청이 오면 연결 수락
-        clnt_sock = accept(serv_sock, (struct sockaddr*)&clnt_addr, &clnt_addr_size);   //블록킹!  
+        clnt_sock = accept(serv_sock, (struct sockaddr*)&clnt_addr, &clnt_addr_size);   //블록킹!
         if(clnt_sock==-1)
-            error_handling("accept error");
+                error_handling("accept error");
         printf("Connection Request from Client [IP:%s, Port:%d] has been Accepted\n", inet_ntoa(clnt_addr.sin_addr), ntohs(clnt_addr.sin_port));
 
         snprintf(buf, sizeof(buf), "%s/new.c", argv[2]);
-
         //연결이 성공적으로 되었으면 file 받기
         recv_file(clnt_sock, buf);
         
@@ -66,35 +65,69 @@ int main(int argc, char * argv[]) {
         memset(buf, 0, sizeof(buf));
         fgets(buf, sizeof(buf), fp);
         
-        send(clnt_sock, buf, 1, 0);    //compile error 여부 알려주기
+        send(clnt_sock, buf, 1, 0);    //compile error 여부 알려주기 (Compile error시 buf[0] != 0x0)
 
-        if(strlen(buf) != 0) 
-            error_handling("compile error");
+        if(strlen(buf) != 0) {
+            printf("Compile error.\n");
+            continue;
+        }
+            
 
         pclose(fp);
 
         for(int i = 1; i <= 5; i++) {
+            int read_fd;
+            pid_t child;
+            printf("%d !\n", i);
             //input file 받고
             snprintf(buf, sizeof(buf), "%s/%d.in", argv[2], i);
             recv_file(clnt_sock, buf);
 
             //돌려보고
-            snprintf(buf, sizeof(buf), "./a.out < %s/%d.in > %s/%d.out", argv[2], i, argv[2], i);
-            if((fp = popen(buf, "r")) == NULL) 
-                error_handling("popen() error (2)");
-            //시간 기다리고 timeout시 처리.
-            sleep(1);
+            snprintf(buf, sizeof(buf), "./a.out < %s/%d.in > %s/%d.out && echo done", argv[2], i, argv[2], i);
+            if((child = my_popen(buf, &read_fd)) == -1) 
+                error_handling("my_popen() error (2)");
 
-            //output file 전송.
-            snprintf(buf, sizeof(buf), "./%s/%d.out", argv[2], i);
-            send_file(clnt_sock, buf);
-            pclose(fp);
+            //최대 3secs 기다리기
+            int result;
+            fd_set fd_status;
+            struct timeval timeout;
+            
+            FD_ZERO(&fd_status);
+            FD_SET(read_fd, &fd_status);
+            timeout.tv_sec = 3; //3초 타임아웃
+            timeout.tv_usec = 0;
+            result = select(read_fd + 1, &fd_status, 0, 0, &timeout);
+            printf("readfd : %d\n", read_fd);
+            if(result == -1) {
+                error_handling("unintended disconnect!");
+            }
+            else if(result == 0) {
+                //timeout이 일어났다는 사실을 알림
+                buf[0] = 0x33;
+                send(clnt_sock, buf, 1, 0);
+                printf("send Timeout for testcase %d\n", i);
+                kill(child, SIGINT);
+            }
+            else {
+                //timeout이 안 일어났다는 사실을 알림
+                buf[0] = 0x00;
+                send(clnt_sock, buf, 1, 0);
+
+                //output file 전송.
+                snprintf(buf, sizeof(buf), "./%s/%d.out", argv[2], i);
+                send_file(clnt_sock, buf);
+                
+            }
+
+            close(read_fd);
         }
 
         //생성된 파일 삭제.(worker space의 파일들 삭제)
-        snprintf(buf, sizeof(buf), "rm -rf %s/*", argv[2]);
+        snprintf(buf, sizeof(buf), "rm -rf %s/* ./a.out", argv[2]);
         fp = popen(buf, "r");
         pclose(fp);
+        
         close(clnt_sock);
     }
 
