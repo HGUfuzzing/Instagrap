@@ -91,8 +91,8 @@ int main(int argc, char * argv[]) {
         //컴파일 에러 여부 worker에게 받아서 submitter에게 발송
         recv(to_worker_fd, buf, 1, 0);
         send(conn_fd, buf, 1, 0);
-        if(buf[0]) {
-            printf("compile error"); 
+        if(buf[0] == 0x33) {
+            printf("compile error\n"); 
             close(to_worker_fd);   
             close(conn_fd); //conn socket 닫고
             continue;       //다음 submitter 연결 받기

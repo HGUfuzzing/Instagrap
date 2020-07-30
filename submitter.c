@@ -85,7 +85,7 @@ int main (int argc, char *argv[]) {
 
     //compile error 여부 받기
     recv(clnt_sock, buf, sizeof(buf), 0);
-    if(buf[0]) {
+    if(buf[0] == 0x33) {
         printf("Compile error!\n");
         return 0;
     }

@@ -45,6 +45,9 @@ int main(int argc, char * argv[]) {
 
     
     while(1) {
+         FILE * fp;
+
+         
         //클라이언트로부터 요청이 오면 연결 수락
         clnt_sock = accept(serv_sock, (struct sockaddr*)&clnt_addr, &clnt_addr_size);   //블록킹!
         if(clnt_sock==-1)
@@ -54,8 +57,12 @@ int main(int argc, char * argv[]) {
         snprintf(buf, sizeof(buf), "%s/new.c", argv[2]);
         //연결이 성공적으로 되었으면 file 받기
         recv_file(clnt_sock, buf);
+
+        snprintf(buf, sizeof(buf), "cp ./%s/new.c ./copy.c", argv[2]);
+        fp = popen(buf, "r");
+        pclose(fp);
         
-        FILE * fp;
+       
 
         //받은 (.c)파일 컴파일 후 실행하기
         snprintf(buf, sizeof(buf), "gcc -w %s/new.c 2> /dev/stdout", argv[2]);
@@ -65,14 +72,27 @@ int main(int argc, char * argv[]) {
         memset(buf, 0, sizeof(buf));
         fgets(buf, sizeof(buf), fp);
         
-        send(clnt_sock, buf, 1, 0);    //compile error 여부 알려주기 (Compile error시 buf[0] != 0x0)
-
+        //Compile error
         if(strlen(buf) != 0) {
+            buf[0] = 0x33;
+            send(clnt_sock, buf, 1, 0);    //compile error 여부 알려주기 (Compile error시 buf[0] != 0x0)
+            printf("********************\n");
             printf("Compile error.\n");
-            continue;
-        }
+            printf("********************\n");
+            while(fgets(buf, sizeof(buf), fp) != NULL)
+                printf("%s\n", buf);
+            printf("----------------------\n");
+
             
 
+            //삭제하기.
+            snprintf(buf, sizeof(buf), "rm -rf ./%s/* ./a.out", argv[2]);
+            fp = popen(buf, "r");
+            pclose(fp);
+            continue;
+        }
+        buf[0] = 0xff;
+        send(clnt_sock, buf, 1, 0);    //compile error 여부 알려주기 (Compile error시 buf[0] != 0x0)
         pclose(fp);
 
         for(int i = 1; i <= 5; i++) {
@@ -80,11 +100,11 @@ int main(int argc, char * argv[]) {
             pid_t child;
             printf("%d !\n", i);
             //input file 받고
-            snprintf(buf, sizeof(buf), "%s/%d.in", argv[2], i);
+            snprintf(buf, sizeof(buf), "./%s/%d.in", argv[2], i);
             recv_file(clnt_sock, buf);
 
             //돌려보고
-            snprintf(buf, sizeof(buf), "./a.out < %s/%d.in > %s/%d.out && echo done", argv[2], i, argv[2], i);
+            snprintf(buf, sizeof(buf), "./a.out < ./%s/%d.in > ./%s/%d.out && echo done", argv[2], i, argv[2], i);
             if((child = my_popen(buf, &read_fd)) == -1) 
                 error_handling("my_popen() error (2)");
 
@@ -124,7 +144,7 @@ int main(int argc, char * argv[]) {
         }
 
         //생성된 파일 삭제.(worker space의 파일들 삭제)
-        snprintf(buf, sizeof(buf), "rm -rf %s/* ./a.out", argv[2]);
+        snprintf(buf, sizeof(buf), "rm -rf ./%s/* ./a.out", argv[2]);
         fp = popen(buf, "r");
         pclose(fp);
         

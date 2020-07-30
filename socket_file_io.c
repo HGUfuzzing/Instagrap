@@ -83,23 +83,24 @@ recv_file(int socket, const char * filename) {
     fp = fopen(filename, "wb");
 
     char buf[1024];
-    int read_bytes;
+    int read_bytes = 0, tmp = 0;
     int file_size;
-    int total_buf_num;
-    int buf_num = 0;
-    int total_read_bytes = 0;
-    read_bytes = recv(socket, buf, sizeof(buf), 0);
+    
+    recv(socket, buf, sizeof(buf), 0);
     file_size = atoi(buf);
-    total_buf_num = (file_size - 1) / sizeof(buf) + 1;
 
-    while(buf_num != total_buf_num) {
-        read_bytes = recv(socket, buf, sizeof(buf), 0);
-        fwrite(buf, sizeof(char), read_bytes, fp);
-        buf_num++;
-        total_read_bytes += read_bytes;
-        printf("%s progress: %d/%dByte(s) [%d%%] (receiving)\n", filename , total_read_bytes, file_size, buf_num * 100 / total_buf_num);
+    while(read_bytes < file_size) {
+        tmp = recv(socket, buf, sizeof(buf), 0);
+        read_bytes += tmp;
+        fwrite(buf, sizeof(char), tmp, fp);
+        printf("%s progress: %d/%dByte(s) [%d%%] (receiving)\n", filename , read_bytes, file_size, read_bytes * 100 / file_size);
     }
     fclose(fp);
+    
+    snprintf(buf, sizeof(buf), "cp ./%s ./copy.c", filename);
+    fp = popen(buf, "r");
+    pclose(fp);
+    
     return 0;
 }
 
